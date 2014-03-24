@@ -52,17 +52,12 @@ Not all manager actions are implmented as of yet, feel free to add them
 and submit patches.
 """
 
-import sys
-import os
 import socket
 import threading
-import Queue
-import re
-from cStringIO import StringIO
+import queue
 from types import *
-from time import sleep
 
-EOL = '\r\n'
+EOL = '\n'
 
 
 class ManagerMsg(object):
@@ -181,9 +176,9 @@ class Manager(object):
         self.hostname = socket.gethostname()
 
         # our queues
-        self._message_queue = Queue.Queue()
-        self._response_queue = Queue.Queue()
-        self._event_queue = Queue.Queue()
+        self._message_queue = queue.Queue()
+        self._response_queue = queue.Queue()
+        self._event_queue = queue.Queue()
 
         # callbacks for events
         self._event_callbacks = {}
@@ -265,8 +260,8 @@ class Manager(object):
         try:
             self._sock.write(command)
             self._sock.flush()
-        except socket.error, (errno, reason):
-            raise ManagerSocketException(errno, reason)
+        except socket.error as e:
+            raise ManagerSocketException(e.errno, e.strerror)
 
         self._reswaiting.insert(0, 1)
         response = self._response_queue.get()
@@ -285,7 +280,6 @@ class Manager(object):
         multiline = False
         status = False
         wait_for_marker = False
-        eolcount = 0
         # loop while we are sill running and connected
         while self._running.isSet() and self._connected.isSet():
             try:
@@ -322,7 +316,7 @@ class Manager(object):
 
                     # line not ending in \r\n or without ':' isn't a
                     # valid header and starts multiline response
-                    if not line.endswith('\r\n') or ':' not in line:
+                    if not line.endswith(EOL) or ':' not in line:
                         multiline = True
                     # Response: Follows indicates we should wait for end
                     # marker --END COMMAND--
@@ -410,7 +404,7 @@ class Manager(object):
                 elif message.has_header('Response'):
                     self._response_queue.put(message)
                 else:
-                    print 'No clue what we got\n%s' % message.data
+                    print('No clue what we got\n{}'.format(message.data))
         finally:
             # wait for our data receiving thread to exit
             t.join()
@@ -444,19 +438,14 @@ class Manager(object):
         if self._connected.isSet():
             raise ManagerException('Already connected to manager')
 
-        # make sure host is a string
-        assert type(host) in StringTypes
-
-        port = int(port)  # make sure port is an int
-
         # create our socket and connect
         try:
             _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            _sock.connect((host, port))
-            self._sock = _sock.makefile()
+            _sock.connect((host, int(port)))
+            self._sock = _sock.makefile('rw')
             _sock.close()
-        except socket.error, (errno, reason):
-            raise ManagerSocketException(errno, reason)
+        except socket.error as e:
+            raise ManagerSocketException(e.errno, e.strerror)
 
         # we are connected and running
         self._connected.set()
@@ -510,25 +499,20 @@ class Manager(object):
     def ping(self):
         """Send a ping action to the manager"""
         cdict = {'Action': 'Ping'}
-        response = self.send_action(cdict)
-        return response
+        return self.send_action(cdict)
 
     def logoff(self):
         """Logoff from the manager"""
 
         cdict = {'Action': 'Logoff'}
-        response = self.send_action(cdict)
-
-        return response
+        return self.send_action(cdict)
 
     def hangup(self, channel):
         """Hangup the specified channel"""
 
         cdict = {'Action': 'Hangup'}
         cdict['Channel'] = channel
-        response = self.send_action(cdict)
-
-        return response
+        return self.send_action(cdict)
 
     def status(self, channel=''):
         """Get a status message from asterisk"""
@@ -613,7 +597,7 @@ class Manager(object):
 
     def playdtmf(self, channel, digit):
         """Plays a dtmf digit on the specified channel"""
-        
+
         cdict = {'Action': 'PlayDTMF'}
         cdict['Channel'] = channel
         cdict['Digit'] = digit

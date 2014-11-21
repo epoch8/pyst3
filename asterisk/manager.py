@@ -98,7 +98,7 @@ class ManagerMsg(object):
         data = []
         for n, line in enumerate(response):
             # all valid header lines end in \r\n
-            if not line.endswith('\r\n'):
+            if not line.endswith(EOL):
                 data.extend(response[n:])
                 break
             try:

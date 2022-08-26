@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # vim: set et sw=4:
 """agi
 
@@ -22,7 +22,6 @@ pyvr
 import sys
 import pprint
 import re
-from types import ListType
 import signal
 
 DEFAULT_TIMEOUT = 2000  # 2sec timeout used as default for functions that take timeouts
@@ -188,7 +187,7 @@ class AGI:
             raise AGIUnknownError(code, 'Unhandled code or undefined response')
 
     def _process_digit_list(self, digits):
-        if type(digits) == ListType:
+        if isinstance(digits, list):
             digits = ''.join(map(str, digits))
         return self._quote(digits)
 
@@ -660,26 +659,12 @@ class AGI:
         """
         self.execute('NOOP')
 
+
 if __name__ == '__main__':
     agi = AGI()
-    #agi.appexec('festival','Welcome to Klass Technologies.  Thank you for calling.')
-    #agi.appexec('festival','This is a test of the text to speech engine.')
-    #agi.appexec('festival','Press 1 for sales ')
-    #agi.appexec('festival','Press 2 for customer support ')
-    #agi.hangup()
-    #agi.goto_on_exit(extension='1234', priority='1')
-    #sys.exit(0)
-    #agi.say_digits('123', [4,'5',6])
-    #agi.say_digits([4,5,6])
-    #agi.say_number('1234')
-    #agi.say_number('01234')  # 668
-    #agi.say_number('0xf5')   # 245
     agi.get_data('demo-congrats')
     agi.hangup()
     sys.exit(0)
-    #agi.record_file('pyst-test') #FAILS
-    #agi.stream_file('demo-congrats', [1,2,3,4,5,6,7,8,9,0,'#','*'])
-    #agi.appexec('background','demo-congrats')
 
     try:
         agi.appexec('backgrounder', 'demo-congrats')

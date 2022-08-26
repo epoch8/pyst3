@@ -55,7 +55,6 @@ and submit patches.
 import socket
 import threading
 import queue
-from types import *
 
 EOL = '\n'
 
@@ -190,12 +189,10 @@ class Manager(object):
         self._seq = 0
 
         # some threads
-        self.message_thread = threading.Thread(target=self.message_loop)
+        self.message_thread = threading.Thread(target=self.message_loop, daemon=True)
         self.event_dispatch_thread = threading.Thread(
-            target=self.event_dispatch)
-
-        self.message_thread.setDaemon(True)
-        self.event_dispatch_thread.setDaemon(True)
+            target=self.event_dispatch, daemon=True
+        )
 
     def __del__(self):
         self.close()
@@ -204,7 +201,7 @@ class Manager(object):
         """
         Check if we are connected or not.
         """
-        return self._connected.isSet()
+        return self._connected.is_set()
 
     def next_seq(self):
         """Return the next number in the sequence, this is used for ActionID"""
@@ -233,7 +230,7 @@ class Manager(object):
         Variable: var2=value
         """
 
-        if not self._connected.isSet():
+        if not self._connected.is_set():
             raise ManagerException("Not connected")
 
         # fill in our args
@@ -281,7 +278,7 @@ class Manager(object):
         status = False
         wait_for_marker = False
         # loop while we are sill running and connected
-        while self._running.isSet() and self._connected.isSet():
+        while self._running.is_set() and self._connected.is_set():
             try:
                 lines = []
                 for line in self._sock:
@@ -303,7 +300,7 @@ class Manager(object):
                     # newlines until we see that marker
                     if line == EOL and not wait_for_marker:
                         multiline = False
-                        if lines or not self._connected.isSet():
+                        if lines or not self._connected.is_set():
                             break
                         # ignore empty lines at start
                         continue
@@ -331,14 +328,14 @@ class Manager(object):
                     if status and 'StatusComplete' in line:
                         wait_for_marker = False
                         status = False
-                    if not self._connected.isSet():
+                    if not self._connected.is_set():
                         break
                 else:
                     # EOF during reading
                     self._sock.close()
                     self._connected.clear()
                 # if we have a message append it to our queue
-                if lines and self._connected.isSet():
+                if lines and self._connected.is_set():
                     self._message_queue.put(lines)
                 else:
                     self._message_queue.put(None)
@@ -376,13 +373,12 @@ class Manager(object):
         """
 
         # start a thread to recieve data
-        t = threading.Thread(target=self._receive_data)
-        t.setDaemon(True)
+        t = threading.Thread(target=self._receive_data, daemon=True)
         t.start()
 
         try:
             # loop getting messages from the queue
-            while self._running.isSet():
+            while self._running.is_set():
                 # get/wait for messages
                 data = self._message_queue.get()
 
@@ -413,7 +409,7 @@ class Manager(object):
         """This thread is responsible for dispatching events"""
 
         # loop dispatching events
-        while self._running.isSet():
+        while self._running.is_set():
             # get/wait for an event
             ev = self._event_queue.get()
 
@@ -435,7 +431,7 @@ class Manager(object):
     def connect(self, host, port=5038):
         """Connect to the manager interface"""
 
-        if self._connected.isSet():
+        if self._connected.is_set():
             raise ManagerException('Already connected to manager')
 
         # create our socket and connect
@@ -464,10 +460,10 @@ class Manager(object):
         """Shutdown the connection to the manager"""
 
         # if we are still running, logout
-        if self._running.isSet() and self._connected.isSet():
+        if self._running.is_set() and self._connected.is_set():
             self.logoff()
 
-        if self._running.isSet():
+        if self._running.is_set():
             # put None in the message_queue to kill our threads
             self._message_queue.put(None)
 
@@ -475,7 +471,7 @@ class Manager(object):
             self.message_thread.join()
 
             # make sure we do not join our self (when close is called from event handlers)
-            if threading.currentThread() != self.event_dispatch_thread:
+            if threading.current_thread() != self.event_dispatch_thread:
                 # wait for the dispatch thread to exit
                 self.event_dispatch_thread.join()
 
@@ -538,7 +534,7 @@ class Manager(object):
 
         return response
 
-    def originate(self, channel, exten, context='', priority='', timeout='', caller_id='', async=False, account='', variables={}):
+    def originate(self, channel, exten, context='', priority='', timeout='', caller_id='', account='', variables={}):
         """Originate a call"""
 
         cdict = {'Action': 'Originate'}
@@ -552,8 +548,6 @@ class Manager(object):
             cdict['Timeout'] = timeout
         if caller_id:
             cdict['CallerID'] = caller_id
-        if async:
-            cdict['Async'] = 'yes'
         if account:
             cdict['Account'] = account
         # join dict of vairables together in a string in the form of 'key=val|key=val'

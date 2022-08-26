@@ -90,7 +90,7 @@ def text(eparams, context=5):
     import pydoc
 
     etype, evalue, etb = eparams
-    if isinstance(etype, types.ClassType):
+    if inspect.isclass(etype):
         etype = etype.__name__
     pyver = 'Python ' + sys.version.split()[0] + ': ' + sys.executable
     date = time.ctime(time.time())
@@ -148,7 +148,7 @@ function calls leading up to the error, in the order they occurred.
         frames.append('\n%s\n' % '\n'.join(rows))
 
     exception = ['%s: %s' % (str(etype), str(evalue))]
-    if isinstance(evalue, types.InstanceType):
+    if not inspect.isclass(evalue):
         for name in dir(evalue):
             value = pydoc.text.repr(getattr(evalue, name))
             exception.append('\n%s%s = %s' % (" " * 4, name, value))

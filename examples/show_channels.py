@@ -9,25 +9,28 @@ manager = asterisk.manager.Manager()
 try:
     # connect to the manager
     try:
-        manager.connect('localhost')
-        manager.login('user', 'secret')
+        manager.connect(host='localhost')
+        manager.login('admin', 'ami-secret')
 
-        # get a status report
         response = manager.status()
-        print response
+        print(response.data)
         
-        response = manager.command('core show channels concise')
-        print response.data
+        response = manager.originate(
+            channel="PJSIP/6001",
+            exten=100,
+            context="from-internal",
+            priority=1
+        )
+        print(response)
 
-        manager.logoff()
-    except asterisk.manager.ManagerSocketException, (errno, reason):
-        print "Error connecting to the manager: %s" % reason
+    except asterisk.manager.ManagerSocketException as reason:
+        print("Error connecting to the manager: %s" % reason)
         sys.exit(1)
-    except asterisk.manager.ManagerAuthException, reason:
-        print "Error logging in to the manager: %s" % reason
+    except asterisk.manager.ManagerAuthException as reason:
+        print("Error logging in to the manager: %s" % reason)
         sys.exit(1)
-    except asterisk.manager.ManagerException, reason:
-        print "Error: %s" % reason
+    except asterisk.manager.ManagerException as reason:
+        print("Error: %s" % reason)
         sys.exit(1)
 
 finally:

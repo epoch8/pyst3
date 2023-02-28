@@ -12,3 +12,12 @@ _build
 
 # Auto-generated files.
 MANIFEST
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/

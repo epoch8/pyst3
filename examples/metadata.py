@@ -1,32 +1,32 @@
-"""
-Example to get metadata from configured cdr_manager
-"""
-import asterisk.manager
+"""Example to get metadata from configured cdr_manager."""
 import sys
+
+import asterisk.manager
 
 
 def handle_cdr_event(event, manager):
-   """Получаем и выводим необходимые метаданные и завершаем потоки."""
-   print(event.get_header("BillableSeconds"))
-   print(event.get_header("Disposition"))
-   print(event.get_header("UniqueID"))
-   manager.close()
+    """Получаем и выводим необходимые метаданные и завершаем потоки."""
+    print(event.get_header("BillableSeconds"))
+    print(event.get_header("Disposition"))
+    print(event.get_header("UniqueID"))
+    manager.close()
+
 
 manager = asterisk.manager.Manager()
 
 try:
     try:
         # Подключаемся в AMI
-        manager.connect(host='localhost')
-        manager.login('admin', 'ami-secret')
-        
+        manager.connect(host="localhost")
+        manager.login("admin", "ami-secret")
+
         # Инициируем звонок (локально)
         manager.originate(
             channel="PJSIP/6001",
             exten=100,
             context="from-internal",
             priority=1,
-            variables={"CALLERID(all)": "6001", "CALLERID(dnid)": "100"}
+            variables={"CALLERID(all)": "6001", "CALLERID(dnid)": "100"},
         )
 
         # Регистрируем callback на Event с именем Cdr и вызывам join() чтобы дождаться callback

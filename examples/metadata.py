@@ -45,5 +45,5 @@ try:
         print("Error: %s" % reason)
         sys.exit(1)
 finally:
-    # перестрахховываемся
+    # перестраховываемся
     manager.close()

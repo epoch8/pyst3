@@ -1,0 +1,18 @@
+.git
+.cache
+*.md
+
+# Temporary files.
+*.pyc
+*.swp
+*~
+.coverage
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/

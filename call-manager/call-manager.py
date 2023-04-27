@@ -1,20 +1,29 @@
-"""Example to get metadata from configured cdr_manager."""
+"""Call-manager that get tasks for origination, originate and manage calls."""
 import json
-import sys
+import logging
+import os
 import time
 from string import Template
 
 import requests
+from dotenv import load_dotenv
 
 import asterisk.manager
 
-CHATBOT_ADMIN_URL = "http://localhost:8001"
-CHATBOT_ADMIN_API_KEY = "whozKC8meyPDiEVGRDp7lGxClQY28tyQ"
-LOCAL = True
-AMI_HOST = "localhost"
-AMI_USERNAME = "admin"
-AMI_SECRET = "secret"
-TASKS_BANCH_SIZE = 5
+load_dotenv()
+logging.basicConfig(format="%(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+
+LOCAL = bool(os.getenv("LOCAL"))
+
+CHATBOT_ADMIN_URL = os.getenv("CHATBOT_ADMIN_URL", "http://call-manager:8001")
+CHATBOT_ADMIN_API_KEY = os.getenv("CHATBOT_ADMIN_API_KEY", "whozKC8meyPDiEVGRDp7lGxClQY28tyQ")
+
+AMI_HOST = os.getenv("AMI_HOST", "asterisk")
+AMI_USERNAME = os.getenv("AMI_USERNAME", "admin")
+AMI_SECRET = os.getenv("AMI_SECRET", "secret")
+
+TASKS_BANCH_SIZE = int(os.getenv("TASKS_BANCH_SIZE", 5))
+CYCLE_PERIOD = int(os.getenv("CYCLE_PERIOD", 60))
 
 manager = asterisk.manager.Manager()
 
@@ -40,8 +49,8 @@ class OriginateManager:
         self.tasks_to_run = []
 
     def prepare_manager(self):
-        self.__manager.connect(host="localhost")
-        self.__manager.login("admin", "ami-secret")
+        self.__manager.connect(host=AMI_HOST)
+        self.__manager.login(AMI_USERNAME, AMI_SECRET)
 
     def add_tasks_banch_from_dispatcher(self) -> None:
         params = {"token": CHATBOT_ADMIN_API_KEY}
@@ -59,6 +68,7 @@ class OriginateManager:
                 "contact_phone_number": int(raw_new_task.get("contact").get("phone")),
             }
             new_tasks.append(new_task)
+        logging.info(f"Added {len(new_tasks)} new tasks")
         self.tasks_to_run += new_tasks
 
     @staticmethod
@@ -96,14 +106,15 @@ class OriginateManager:
                 },
             },
         ]
+        logging.info(f"Call finished: {data}")
         params = {"token": CHATBOT_ADMIN_API_KEY}
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         response = requests.patch(url=tasks_url, params=params, data=json.dumps(data), headers=headers)
         response.raise_for_status()
         tasks_to_monitor.remove(task_id)
-        print("sent")
 
     def originate_call_with_callback_from_task(self, task: dict):
+        logging.info(f"Originateing call from task: {task}")
         self.__manager.originate(
             channel=self.channel_template.substitute(contact_phone_number=task["contact_phone_number"]),
             exten=task["bot_phone_number"],
@@ -116,7 +127,6 @@ class OriginateManager:
                 "CDR(userfield)": task["task_id"],
             },
         )
-
         tasks_to_monitor.append(task["task_id"])
 
     def join_originated_call(self):
@@ -128,6 +138,7 @@ class OriginateManager:
 
 def main():
     try:
+        logging.info("Starting")
         originate_manager = OriginateManager(
             manager=manager,
             channel_template=channel_template,
@@ -136,27 +147,29 @@ def main():
         )
         originate_manager.prepare_manager()
         originate_manager.monitor_cdr_events()
+        logging.info("OriginateManager prepared and monitor cdr events")
         while True:
-            print("cycle")
             try:
+                logging.info("Cycle started")
                 originate_manager.add_tasks_banch_from_dispatcher()
 
                 for _ in range(len(originate_manager.tasks_to_run)):
                     originate_manager.originate_call_with_callback_from_task(originate_manager.tasks_to_run.pop(0))
-                print("finish")
-
+                logging.info("Cycle finished")
             except asterisk.manager.ManagerSocketException as reason:
-                print("Error connecting to the manager: %s" % reason)
-                sys.exit(1)
+                logging.exception("Error connecting to the manager: %s" % reason)
             except asterisk.manager.ManagerAuthException as reason:
-                print("Error logging in to the manager: %s" % reason)
-                sys.exit(1)
+                logging.exception("Error logging in to the manager: %s" % reason)
             except asterisk.manager.ManagerException as reason:
-                print("Error: %s" % reason)
-                sys.exit(1)
-            time.sleep(30)
+                logging.exception("Error: %s" % reason)
+            except Exception as e:
+                logging.exception(f"Unexpected error ocured: {e}")
+            time.sleep(CYCLE_PERIOD)
     finally:
-        manager.close()
+        try:
+            manager.close()
+        except Exception as e:
+            logging.exception(f"While closing the manager error ocured: {e}")
 
 
 if __name__ == "__main__":

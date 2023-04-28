@@ -74,7 +74,10 @@ class OriginateManager:
     @staticmethod
     def handle_cdr_event(event, _) -> None:
         """Получаем метаданные и передаем в админку."""
-        task_id = int(event.get_header("UserField"))
+        task_id = event.get_header("UserField")
+        if len(task_id) < 1:
+            return
+        task_id = int(task_id)
         if task_id not in tasks_to_monitor:
             return
         metadata = {
@@ -121,6 +124,7 @@ class OriginateManager:
             context=self.context,
             priority=1,
             timeout=task["timeout"],
+            caller_id=task["bot_phone_number"],
             variables={
                 "CALLERID(all)": task["contact_phone_number"],
                 "CALLERID(dnid)": task["bot_phone_number"],

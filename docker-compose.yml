@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    # build: .
-    image: ghcr.io/epoch8/rtk-call-manager:0.1.0
+    build: .
     restart: always
     volumes:
       - ./:/app

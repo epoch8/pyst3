@@ -63,7 +63,7 @@ class OriginateManager:
             new_task = {
                 "task_id": int(raw_new_task.get("id")),
                 "campaign": campaign,
-                "bot_phone_number": int(campaign.get("bot_phone_number")[0]),
+                "bot_phone_number": int(campaign.get("bot_phone_number")),
                 "timeout": int(campaign.get("subscriber_response_waiting_limit")),
                 "contact_phone_number": int(raw_new_task.get("contact").get("phone")),
             }
@@ -72,7 +72,13 @@ class OriginateManager:
         self.tasks_to_run += new_tasks
 
     @staticmethod
-    def handle_cdr_event(event, _) -> None:
+    def update_task_status_in_admin(data: dict) -> None:
+        params = {"token": CHATBOT_ADMIN_API_KEY}
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        response = requests.patch(url=tasks_url, params=params, data=json.dumps(data), headers=headers)
+        response.raise_for_status()
+
+    def handle_cdr_event(self, event, _) -> None:
         """Получаем метаданные и передаем в админку."""
         task_id = event.get_header("UserField")
         if len(task_id) < 1:
@@ -110,14 +116,11 @@ class OriginateManager:
             },
         ]
         logging.info(f"Call finished: {data}")
-        params = {"token": CHATBOT_ADMIN_API_KEY}
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        response = requests.patch(url=tasks_url, params=params, data=json.dumps(data), headers=headers)
-        response.raise_for_status()
+        self.update_task_status_in_admin(data)
         tasks_to_monitor.remove(task_id)
 
     def originate_call_with_callback_from_task(self, task: dict):
-        logging.info(f"Originateing call from task: {task}")
+        logging.info(f"Originating call from task: {task}")
         self.__manager.originate(
             channel=self.channel_template.substitute(contact_phone_number=task["contact_phone_number"]),
             exten=task["bot_phone_number"],
@@ -166,6 +169,7 @@ def main():
                 logging.exception("Error logging in to the manager: %s" % reason)
             except asterisk.manager.ManagerException as reason:
                 logging.exception("Error: %s" % reason)
+                # TODO originate_manager.prepare_manager()
             except Exception as e:
                 logging.exception(f"Unexpected error ocured: {e}")
             time.sleep(CYCLE_PERIOD)

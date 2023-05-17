@@ -160,7 +160,7 @@ def main():
                 logging.info("Cycle started")
                 originate_manager.add_tasks_banch_from_dispatcher()
 
-                for _ in range(len(originate_manager.tasks_to_run)):
+                for _ in originate_manager.tasks_to_run:
                     originate_manager.originate_call_with_callback_from_task(originate_manager.tasks_to_run.pop(0))
                 logging.info("Cycle finished")
             except asterisk.manager.ManagerSocketException as reason:

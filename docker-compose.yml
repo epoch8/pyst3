@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    restart: always
+    volumes:
+      - ./:/app
+    env_file:
+      - .env
+    networks:
+      - rasa
+
+networks:
+  rasa:
+    external: true

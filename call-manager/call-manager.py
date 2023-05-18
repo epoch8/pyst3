@@ -1,17 +1,35 @@
 """Call-manager that get tasks for origination, originate and manage calls."""
-import json
+import asyncio
 import logging
 import os
 import time
+import typing as tp
+from concurrent.futures import ThreadPoolExecutor
 from string import Template
 
-import requests
+import aiohttp
+import structlog
 from dotenv import load_dotenv
 
 import asterisk.manager
 
 load_dotenv()
-logging.basicConfig(format="%(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.StackInfoRenderer(),
+        structlog.dev.set_exc_info,
+        structlog.processors.TimeStamper(),
+        structlog.dev.ConsoleRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(logging.NOTSET),
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=False,
+)
+logger = structlog.get_logger()
 
 LOCAL = bool(os.getenv("LOCAL"))
 
@@ -47,36 +65,41 @@ class OriginateManager:
         self.context = context
         self.tasks_banch_size = tasks_banch_size
         self.tasks_to_run = []
+        self.client_session = aiohttp.ClientSession()
+        self._executor = ThreadPoolExecutor(max_workers=2)
+        self._loop = None
 
-    def prepare_manager(self):
-        self.__manager.connect(host=AMI_HOST)
-        self.__manager.login(AMI_USERNAME, AMI_SECRET)
+    def _run_in_thread(self, func: tp.Callable, *args) -> asyncio.futures.Future:
+        return asyncio.get_event_loop().run_in_executor(self._executor, func, *args)
 
-    def add_tasks_banch_from_dispatcher(self) -> None:
+    async def prepare_manager(self):
+        await self._run_in_thread(self.__manager.connect, AMI_HOST)
+        await self._run_in_thread(self.__manager.login, AMI_USERNAME, AMI_SECRET)
+
+    async def add_tasks_banch_from_dispatcher(self) -> None:
         params = {"token": CHATBOT_ADMIN_API_KEY}
         data = {"amount": self.tasks_banch_size}
-        response = requests.post(url=tasks_url, params=params, data=data)
-        response.raise_for_status()
-        raw_new_tasks, new_tasks = response.json(), []
-        for raw_new_task in raw_new_tasks:
-            campaign = raw_new_task.get("campaign")
-            new_task = {
-                "task_id": int(raw_new_task.get("id")),
-                "campaign": campaign,
-                "bot_phone_number": int(campaign.get("bot_phone_number")),
-                "timeout": int(campaign.get("subscriber_response_waiting_limit")),
-                "contact_phone_number": int(raw_new_task.get("contact").get("phone")),
-            }
-            new_tasks.append(new_task)
-        logging.info(f"Added {len(new_tasks)} new tasks")
-        self.tasks_to_run += new_tasks
+        async with self.client_session.post(url=tasks_url, json=data, params=params) as response:
+            response.raise_for_status()
+            raw_new_tasks, new_tasks = await response.json(), []
+            for raw_new_task in raw_new_tasks:
+                campaign = raw_new_task.get("campaign")
+                new_task = {
+                    "task_id": int(raw_new_task.get("id")),
+                    "campaign": campaign,
+                    "bot_phone_number": int(campaign.get("bot_phone_number")),
+                    "timeout": int(campaign.get("subscriber_response_waiting_limit")),
+                    "contact_phone_number": int(raw_new_task.get("contact").get("phone")),
+                }
+                new_tasks.append(new_task)
+            await logger.ainfo(f"Added {len(new_tasks)} new tasks")
+            self.tasks_to_run += new_tasks
 
-    @staticmethod
-    def update_task_status_in_admin(data: dict) -> None:
+    async def update_task_status_in_admin(self, data: dict) -> None:
         params = {"token": CHATBOT_ADMIN_API_KEY}
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        response = requests.patch(url=tasks_url, params=params, data=json.dumps(data), headers=headers)
-        response.raise_for_status()
+        async with self.client_session.patch(url=tasks_url, json=data, params=params, headers=headers) as response:
+            response.raise_for_status()
 
     def handle_cdr_event(self, event, _) -> None:
         """Получаем метаданные и передаем в админку."""
@@ -97,7 +120,6 @@ class OriginateManager:
             "AnswerTime": event.get_header("AnswerTime"),
             "EndTime": event.get_header("EndTime"),
         }
-
         data = [
             {
                 "id": int(metadata["TaskID"]),
@@ -115,12 +137,16 @@ class OriginateManager:
                 },
             },
         ]
-        logging.info(f"Call finished: {data}")
-        self.update_task_status_in_admin(data)
+
+        async def _update_task_status_in_admin(data: tp.List[tp.Dict]):
+            await logger.ainfo(f"Call finished: {data}")
+            await self.update_task_status_in_admin(data)
+
+        asyncio.run_coroutine_threadsafe(_update_task_status_in_admin(data), self._loop)
         tasks_to_monitor.remove(task_id)
 
-    def originate_call_with_callback_from_task(self, task: dict):
-        logging.info(f"Originating call from task: {task}")
+    async def originate_call_with_callback_from_task(self, task: dict):
+        await logger.ainfo(f"Originating call from task: {task}")
         self.__manager.originate(
             channel=self.channel_template.substitute(contact_phone_number=task["contact_phone_number"]),
             exten=task["bot_phone_number"],
@@ -136,49 +162,53 @@ class OriginateManager:
         )
         tasks_to_monitor.append(task["task_id"])
 
-    def join_originated_call(self):
-        self.__manager.close()
+    async def monitor_cdr_events(self):
+        await self._run_in_thread(self.__manager.register_event, "Cdr", self.handle_cdr_event)
 
-    def monitor_cdr_events(self):
-        self.__manager.register_event("Cdr", self.handle_cdr_event)
+    async def manager_close(self):
+        await self._run_in_thread(self.__manager.close)
 
 
-def main():
+async def main():
     try:
-        logging.info("Starting")
+        await logger.ainfo("Starting")
         originate_manager = OriginateManager(
             manager=manager,
             channel_template=channel_template,
             context=context,
             tasks_banch_size=TASKS_BANCH_SIZE,
         )
-        originate_manager.prepare_manager()
-        originate_manager.monitor_cdr_events()
-        logging.info("OriginateManager prepared and monitor cdr events")
+        originate_manager._loop = asyncio.get_running_loop()
+        await originate_manager.prepare_manager()
+        await originate_manager.monitor_cdr_events()
+        await logger.ainfo("OriginateManager prepared and monitor cdr events")
         while True:
             try:
-                logging.info("Cycle started")
-                originate_manager.add_tasks_banch_from_dispatcher()
+                await logger.ainfo("Cycle started")
+                await originate_manager.add_tasks_banch_from_dispatcher()
 
                 for _ in originate_manager.tasks_to_run:
-                    originate_manager.originate_call_with_callback_from_task(originate_manager.tasks_to_run.pop(0))
-                logging.info("Cycle finished")
+                    await originate_manager.originate_call_with_callback_from_task(
+                        originate_manager.tasks_to_run.pop(0)
+                    )
+                await logger.ainfo("Cycle finished")
             except asterisk.manager.ManagerSocketException as reason:
-                logging.exception("Error connecting to the manager: %s" % reason)
-            except asterisk.manager.ManagerAuthException as reason:
-                logging.exception("Error logging in to the manager: %s" % reason)
-            except asterisk.manager.ManagerException as reason:
-                logging.exception("Error: %s" % reason)
+                await logger.aexception("Error connecting to the manager: %s" % reason)
                 # TODO originate_manager.prepare_manager()
+            except asterisk.manager.ManagerAuthException as reason:
+                await logger.aexception("Error logging in to the manager: %s" % reason)
+            except asterisk.manager.ManagerException as reason:
+                await logger.aexception("Error: %s" % reason)
+
             except Exception as e:
-                logging.exception(f"Unexpected error ocured: {e}")
+                await logger.aexception(f"Unexpected error ocured: {e}")
             time.sleep(CYCLE_PERIOD)
     finally:
         try:
-            manager.close()
+            await originate_manager.manager_close()
         except Exception as e:
-            logging.exception(f"While closing the manager error ocured: {e}")
+            await logger.aexception(f"While closing the manager error ocured: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

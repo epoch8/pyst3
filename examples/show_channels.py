@@ -33,4 +33,3 @@ try:
 finally:
     # remember to clean up
     manager.close()
-

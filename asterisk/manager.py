@@ -627,6 +627,13 @@ class Manager(object):
         response = self.send_action(cdict)
         return response
 
+    def control_playback(self, channel, control):
+        cdict = {'Action': 'ControlPlayback'}
+        cdict['Channel'] = channel
+        cdict['Control'] = control
+        response = self.send_action(cdict)
+        return response
+
 
 class ManagerException(Exception):
     pass

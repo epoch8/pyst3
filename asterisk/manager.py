@@ -56,15 +56,16 @@ import socket
 import threading
 import queue
 
-EOL = '\n'
+EOL = "\n"
 
 
 class ManagerMsg(object):
     """A manager interface message"""
+
     def __init__(self, response):
         # the raw response, straight from the horse's mouth:
         self.response = response
-        self.data = ''
+        self.data = ""
         self.headers = {}
 
         # parse the response
@@ -81,15 +82,15 @@ class ManagerMsg(object):
         # commands sent and their expected return syntax. In that case
         # we could wait for --END COMMAND-- for 'command'.
         # B0rken in asterisk. This should be parseable without context.
-        if 'Event' not in self.headers and 'Response' not in self.headers:
+        if "Event" not in self.headers and "Response" not in self.headers:
             # there are commands that return the ActionID but not
             # 'Response', e.g., IAXpeers in Asterisk 1.4.X
-            if self.has_header('ActionID'):
-                self.headers['Response'] = 'Generated Header'
-            elif '--END COMMAND--' in self.data:
-                self.headers['Event'] = 'NoClue'
+            if self.has_header("ActionID"):
+                self.headers["Response"] = "Generated Header"
+            elif "--END COMMAND--" in self.data:
+                self.headers["Event"] = "NoClue"
             else:
-                self.headers['Response'] = 'Generated Header'
+                self.headers["Response"] = "Generated Header"
 
     def parse(self, response):
         """Parse a manager message"""
@@ -101,13 +102,13 @@ class ManagerMsg(object):
                 data.extend(response[n:])
                 break
             try:
-                k, v = (x.strip() for x in line.split(':', 1))
+                k, v = (x.strip() for x in line.split(":", 1))
                 self.headers[k] = v
             except ValueError:
                 # invalid header, start of multi-line data response
                 data.extend(response[n:])
                 break
-        self.data = ''.join(data)
+        self.data = "".join(data)
 
     def has_header(self, hname):
         """Check for a header"""
@@ -122,28 +123,27 @@ class ManagerMsg(object):
         return self.headers[hname]
 
     def __repr__(self):
-        if 'Response' in self.headers:
-            return self.headers['Response']
+        if "Response" in self.headers:
+            return self.headers["Response"]
         else:
-            return self.headers['Event']
+            return self.headers["Event"]
 
 
 class Event(object):
     """Manager interface Events, __init__ expects and 'Event' message"""
-    def __init__(self, message):
 
+    def __init__(self, message):
         # store all of the event data
         self.message = message
         self.data = message.data
         self.headers = message.headers
 
         # if this is not an event message we have a problem
-        if not message.has_header('Event'):
-            raise ManagerException(
-                'Trying to create event from non event message')
+        if not message.has_header("Event"):
+            raise ManagerException("Trying to create event from non event message")
 
         # get the event name
-        self.name = message.get_header('Event')
+        self.name = message.get_header("Event")
 
     def has_header(self, hname):
         """Check for a header"""
@@ -158,16 +158,16 @@ class Event(object):
         return self.headers[hname]
 
     def __repr__(self):
-        return self.headers['Event']
+        return self.headers["Event"]
 
     def get_action_id(self):
-        return self.headers.get('ActionID', 0000)
+        return self.headers.get("ActionID", 0000)
 
 
 class Manager(object):
     def __init__(self):
-        self._sock = None     # our socket
-        self.title = None     # set by received greeting
+        self._sock = None  # our socket
+        self.title = None  # set by received greeting
         self._connected = threading.Event()
         self._running = threading.Event()
 
@@ -190,9 +190,7 @@ class Manager(object):
 
         # some threads
         self.message_thread = threading.Thread(target=self.message_loop, daemon=True)
-        self.event_dispatch_thread = threading.Thread(
-            target=self.event_dispatch, daemon=True
-        )
+        self.event_dispatch_thread = threading.Thread(target=self.event_dispatch, daemon=True)
 
     def __del__(self):
         self.close()
@@ -237,8 +235,8 @@ class Manager(object):
         cdict.update(kwargs)
 
         # set the action id
-        if 'ActionID' not in cdict:
-            cdict['ActionID'] = '%s-%08x' % (self.hostname, self.next_seq())
+        if "ActionID" not in cdict:
+            cdict["ActionID"] = "%s-%08x" % (self.hostname, self.next_seq())
         clist = []
 
         # generate the command
@@ -246,10 +244,10 @@ class Manager(object):
             if isinstance(value, list):
                 for item in value:
                     item = tuple([key, item])
-                    clist.append('%s: %s' % item)
+                    clist.append("%s: %s" % item)
             else:
                 item = tuple([key, value])
-                clist.append('%s: %s' % item)
+                clist.append("%s: %s" % item)
         clist.append(EOL)
         command = EOL.join(clist)
 
@@ -265,7 +263,7 @@ class Manager(object):
         self._reswaiting.pop(0)
 
         if not response:
-            raise ManagerSocketException(0, 'Connection Terminated')
+            raise ManagerSocketException(0, "Connection Terminated")
 
         return response
 
@@ -283,13 +281,13 @@ class Manager(object):
                 lines = []
                 for line in self._sock:
                     # check to see if this is the greeting line
-                    if not self.title and '/' in line and not ':' in line:
+                    if not self.title and "/" in line and not ":" in line:
                         # store the title of the manager we are connecting to:
-                        self.title = line.split('/')[0].strip()
+                        self.title = line.split("/")[0].strip()
                         # store the version of the manager we are connecting to:
-                        self.version = line.split('/')[1].strip()
+                        self.version = line.split("/")[1].strip()
                         # fake message header
-                        lines.append('Response: Generated Header\r\n')
+                        lines.append("Response: Generated Header\r\n")
                         lines.append(line)
                         break
                     # If the line is EOL marker we have a complete message.
@@ -306,26 +304,29 @@ class Manager(object):
                         continue
                     # If the user executed the status command, it's a special
                     # case, so we need to look for a marker.
-                    if 'status will follow' in line:
+                    if "status will follow" in line:
                         status = True
                         wait_for_marker = True
                     lines.append(line)
 
                     # line not ending in \r\n or without ':' isn't a
                     # valid header and starts multiline response
-                    if not line.endswith(EOL) or ':' not in line:
+                    if not line.endswith(EOL) or ":" not in line:
                         multiline = True
                     # Response: Follows indicates we should wait for end
                     # marker --END COMMAND--
-                    if not (multiline or status) and line.startswith('Response') and \
-                            line.split(':', 1)[1].strip() == 'Follows':
+                    if (
+                        not (multiline or status)
+                        and line.startswith("Response")
+                        and line.split(":", 1)[1].strip() == "Follows"
+                    ):
                         wait_for_marker = True
                     # same when seeing end of multiline response
-                    if multiline and line.startswith('--END COMMAND--'):
+                    if multiline and line.startswith("--END COMMAND--"):
                         wait_for_marker = False
                         multiline = False
                     # same when seeing end of status response
-                    if status and 'StatusComplete' in line:
+                    if status and "StatusComplete" in line:
                         wait_for_marker = False
                         status = False
                     if not self._connected.is_set():
@@ -394,13 +395,13 @@ class Manager(object):
                 message = ManagerMsg(data)
 
                 # check if this is an event message
-                if message.has_header('Event'):
+                if message.has_header("Event"):
                     self._event_queue.put(Event(message))
                 # check if this is a response
-                elif message.has_header('Response'):
+                elif message.has_header("Response"):
                     self._response_queue.put(message)
                 else:
-                    print('No clue what we got\n{}'.format(message.data))
+                    print("No clue what we got\n{}".format(message.data))
         finally:
             # wait for our data receiving thread to exit
             t.join()
@@ -420,8 +421,7 @@ class Manager(object):
             # dispatch our events
 
             # first build a list of the functions to execute
-            callbacks = (self._event_callbacks.get(ev.name, [])
-                         + self._event_callbacks.get('*', []))
+            callbacks = self._event_callbacks.get(ev.name, []) + self._event_callbacks.get("*", [])
 
             # now execute the functions
             for callback in callbacks:
@@ -432,13 +432,13 @@ class Manager(object):
         """Connect to the manager interface"""
 
         if self._connected.is_set():
-            raise ManagerException('Already connected to manager')
+            raise ManagerException("Already connected to manager")
 
         # create our socket and connect
         try:
             _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             _sock.connect((host, int(port)))
-            self._sock = _sock.makefile('rw')
+            self._sock = _sock.makefile("rw")
             _sock.close()
         except socket.error as e:
             raise ManagerSocketException(e.errno, e.strerror)
@@ -477,87 +477,97 @@ class Manager(object):
 
         self._running.clear()
 
-# Manager actions
+    # Manager actions
 
     def login(self, username, secret):
         """Login to the manager, throws ManagerAuthException when login falis"""
 
-        cdict = {'Action': 'Login'}
-        cdict['Username'] = username
-        cdict['Secret'] = secret
+        cdict = {"Action": "Login"}
+        cdict["Username"] = username
+        cdict["Secret"] = secret
         response = self.send_action(cdict)
 
-        if response.get_header('Response') == 'Error':
-            raise ManagerAuthException(response.get_header('Message'))
+        if response.get_header("Response") == "Error":
+            raise ManagerAuthException(response.get_header("Message"))
 
         return response
 
     def ping(self):
         """Send a ping action to the manager"""
-        cdict = {'Action': 'Ping'}
+        cdict = {"Action": "Ping"}
         return self.send_action(cdict)
 
     def logoff(self):
         """Logoff from the manager"""
 
-        cdict = {'Action': 'Logoff'}
+        cdict = {"Action": "Logoff"}
         return self.send_action(cdict)
 
     def hangup(self, channel):
         """Hangup the specified channel"""
 
-        cdict = {'Action': 'Hangup'}
-        cdict['Channel'] = channel
+        cdict = {"Action": "Hangup"}
+        cdict["Channel"] = channel
         return self.send_action(cdict)
 
-    def status(self, channel=''):
+    def status(self, channel=""):
         """Get a status message from asterisk"""
 
-        cdict = {'Action': 'Status'}
-        cdict['Channel'] = channel
+        cdict = {"Action": "Status"}
+        cdict["Channel"] = channel
         response = self.send_action(cdict)
 
         return response
 
-    def redirect(self, channel, exten, priority='1', extra_channel='', context=''):
+    def redirect(self, channel, exten, priority="1", extra_channel="", context=""):
         """Redirect a channel"""
 
-        cdict = {'Action': 'Redirect'}
-        cdict['Channel'] = channel
-        cdict['Exten'] = exten
-        cdict['Priority'] = priority
+        cdict = {"Action": "Redirect"}
+        cdict["Channel"] = channel
+        cdict["Exten"] = exten
+        cdict["Priority"] = priority
         if context:
-            cdict['Context'] = context
+            cdict["Context"] = context
         if extra_channel:
-            cdict['ExtraChannel'] = extra_channel
+            cdict["ExtraChannel"] = extra_channel
         response = self.send_action(cdict)
 
         return response
 
-    def originate(self, channel, exten, context='', priority='', timeout='', caller_id='', account='', asynchronously=None, variables={}):
+    def originate(
+        self,
+        channel,
+        exten,
+        context="",
+        priority="",
+        timeout="",
+        caller_id="",
+        account="",
+        asynchronously=None,
+        variables={},
+    ):
         """Originate a call"""
 
-        cdict = {'Action': 'Originate'}
-        cdict['Channel'] = channel
-        cdict['Exten'] = exten
+        cdict = {"Action": "Originate"}
+        cdict["Channel"] = channel
+        cdict["Exten"] = exten
         if context:
-            cdict['Context'] = context
+            cdict["Context"] = context
         if priority:
-            cdict['Priority'] = priority
+            cdict["Priority"] = priority
         if timeout:
-            cdict['Timeout'] = timeout
+            cdict["Timeout"] = timeout
         if caller_id:
-            cdict['CallerID'] = caller_id
+            cdict["CallerID"] = caller_id
         if account:
-            cdict['Account'] = account
+            cdict["Account"] = account
         if asynchronously:
-            cdict['Async'] = asynchronously
+            cdict["Async"] = asynchronously
         # join dict of vairables together in a string in the form of 'key=val|key=val'
         # with the latest CVS HEAD this is no longer necessary
         # if variables: cdict['Variable'] = '|'.join(['='.join((str(key), str(value))) for key, value in variables.items()])
         if variables:
-            cdict['Variable'] = ['='.join(
-                (str(key), str(value))) for key, value in variables.items()]
+            cdict["Variable"] = ["=".join((str(key), str(value))) for key, value in variables.items()]
 
         response = self.send_action(cdict)
 
@@ -566,8 +576,8 @@ class Manager(object):
     def mailbox_status(self, mailbox):
         """Get the status of the specfied mailbox"""
 
-        cdict = {'Action': 'MailboxStatus'}
-        cdict['Mailbox'] = mailbox
+        cdict = {"Action": "MailboxStatus"}
+        cdict["Mailbox"] = mailbox
         response = self.send_action(cdict)
 
         return response
@@ -575,8 +585,8 @@ class Manager(object):
     def command(self, command):
         """Execute a command"""
 
-        cdict = {'Action': 'Command'}
-        cdict['Command'] = command
+        cdict = {"Action": "Command"}
+        cdict["Command"] = command
         response = self.send_action(cdict)
 
         return response
@@ -584,9 +594,9 @@ class Manager(object):
     def extension_state(self, exten, context):
         """Get the state of an extension"""
 
-        cdict = {'Action': 'ExtensionState'}
-        cdict['Exten'] = exten
-        cdict['Context'] = context
+        cdict = {"Action": "ExtensionState"}
+        cdict["Exten"] = exten
+        cdict["Context"] = context
         response = self.send_action(cdict)
 
         return response
@@ -594,9 +604,9 @@ class Manager(object):
     def playdtmf(self, channel, digit):
         """Plays a dtmf digit on the specified channel"""
 
-        cdict = {'Action': 'PlayDTMF'}
-        cdict['Channel'] = channel
-        cdict['Digit'] = digit
+        cdict = {"Action": "PlayDTMF"}
+        cdict["Channel"] = channel
+        cdict["Digit"] = digit
         response = self.send_action(cdict)
 
         return response
@@ -604,26 +614,33 @@ class Manager(object):
     def absolute_timeout(self, channel, timeout):
         """Set an absolute timeout on a channel"""
 
-        cdict = {'Action': 'AbsoluteTimeout'}
-        cdict['Channel'] = channel
-        cdict['Timeout'] = timeout
+        cdict = {"Action": "AbsoluteTimeout"}
+        cdict["Channel"] = channel
+        cdict["Timeout"] = timeout
         response = self.send_action(cdict)
         return response
 
     def mailbox_count(self, mailbox):
-        cdict = {'Action': 'MailboxCount'}
-        cdict['Mailbox'] = mailbox
+        cdict = {"Action": "MailboxCount"}
+        cdict["Mailbox"] = mailbox
         response = self.send_action(cdict)
         return response
 
     def sippeers(self):
-        cdict = {'Action': 'Sippeers'}
+        cdict = {"Action": "Sippeers"}
         response = self.send_action(cdict)
         return response
 
     def sipshowpeer(self, peer):
-        cdict = {'Action': 'SIPshowpeer'}
-        cdict['Peer'] = peer
+        cdict = {"Action": "SIPshowpeer"}
+        cdict["Peer"] = peer
+        response = self.send_action(cdict)
+        return response
+
+    def control_playback(self, channel: str, control: str):
+        cdict = {"Action": "ControlPlayback"}
+        cdict["Channel"] = channel
+        cdict["Control"] = control
         response = self.send_action(cdict)
         return response
 
